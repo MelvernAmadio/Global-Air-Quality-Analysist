@@ -1,0 +1,235 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Global Air Quality Index Analysis
+
+#### Program: Data Science
+
+#### Affiliate: Binus University
+
+#### Group Name:
+
+1\. Andrew Jonathan - 2602072262
+
+2\. Marvel Martawidjaja - 2602085656
+
+3\. Melvern Amadio Hidayat - 2602072685\\
+
+#### Description of Dataset:
+
+This dataset provides comprehensive information on air quality indices across different cities in various countries. It encompasses data on key variables related to air pollution levels, as well as geographical coordinates for each city.
+
+## **Exploratory Data Analysis**
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(dlookr)
+library(Hmisc)
+library(caret)
+library(corrplot)
+library(class)
+library(pROC)
+library(randomForest)
+```
+
+```{r}
+df <- read.csv("C:/Users/T480/Downloads/archive/AQI and Lat Long of Countries.csv")
+```
+
+```{r}
+head(df)
+```
+
+```{r}
+str(df)
+```
+
+```{r}
+summary(df)
+```
+
+```{r}
+colSums(is.na(df))
+```
+
+```{r}
+# Mengecek keberadaan duplikat pada seluruh baris dataset
+duplikat <- duplicated(df)
+# Mengembalikan nilai TRUE jika ada duplikat, FALSE jika tidak ada
+any(duplikat)  
+```
+
+```{r}
+# Plot AQI Value distribution
+ggplot(df, aes(x = `AQI.Value`)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "white") +
+  labs(x = "AQI Value", y = "Count", title = "Distribution of AQI Values")
+```
+
+```{r}
+# Plot AQI Category frequencies
+df %>%
+  count(`AQI.Category`) %>%
+  ggplot(aes(x = reorder(`AQI.Category`, n), y = n, fill = `AQI.Category`)) +
+  geom_bar(stat = "identity") +
+  labs(x = "AQI Category", y = "Frequency", title = "AQI Category Frequencies") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+df %>%
+  count(`AQI.Value`) %>%
+  ggplot(aes(x = reorder(`AQI.Value`, n), y = n, color = `AQI.Value`)) +
+  geom_point(size = 3) +
+  labs(x = "AQI Category", y = "Frequency", title = "AQI Category Frequencies") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Set the plot size
+options(repr.plot.width = 16, repr.plot.height = 9)
+
+# Create a color palette for AQI categories
+aqi_colors <- c("Good" = "green", "Moderate" = "yellow", "Unhealthy for Sensitive Groups" = "orange",
+                "Unhealthy" = "red", "Very Unhealthy" = "purple", "Hazardous" = "maroon")
+
+# Create the scatterplot
+ggplot(df, aes(x = lng, y = lat, color = `AQI.Category`)) +
+  geom_point() +
+  scale_color_manual(values = aqi_colors) +
+  labs(x = "Longitude", y = "Latitude", title = "AQI Categories around the world", color = "AQI Category") +
+  theme_bw()
+```
+
+```{r}
+# Top 5 countries with highest AQI values
+top_high_aqi <- aggregate(AQI.Value ~ Country, data = df, FUN = mean, na.rm = TRUE)
+top_high_aqi <- top_high_aqi[order(top_high_aqi$AQI.Value, decreasing = TRUE), ]
+top_high_aqi <- head(top_high_aqi, 5)
+
+# Top 5 countries with lowest AQI values
+top_low_aqi <- aggregate(AQI.Value ~ Country, data = df, FUN = mean, na.rm = TRUE)
+top_low_aqi <- top_low_aqi[order(top_low_aqi$AQI.Value), ]
+top_low_aqi <- head(top_low_aqi, 5)
+
+# Display the top 5 countries with highest AQI values
+cat("Top 5 countries with highest AQI values (worst air quality):\n")
+print(top_high_aqi)
+
+# Display the top 5 countries with lowest AQI values
+cat("\nTop 5 countries with lowest AQI values (best air quality):\n")
+print(top_low_aqi)
+```
+
+```{r}
+# Create bar plot for top 5 countries with highest AQI values
+ggplot(top_high_aqi, aes(x = reorder(Country, AQI.Value), y = AQI.Value)) +
+  geom_bar(stat = "identity", fill = "red") +
+  labs(x = "Country", y = "Average AQI Value", title = "Top 5 Countries with Highest AQI Values") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+
+# Create bar plot for top 5 countries with lowest AQI values
+ggplot(top_low_aqi, aes(x = reorder(Country, AQI.Value), y = AQI.Value)) +
+  geom_bar(stat = "identity", fill = "green") +
+  labs(x = "Country", y = "Average AQI Value", title = "Top 5 Countries with Lowest AQI Values") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+```
+
+```{r}
+# Encoding categorical variables
+df$AQI.Category <- as.numeric(factor(df$AQI.Category))
+df$CO.AQI.Category <- as.numeric(factor(df$CO.AQI.Category))
+df$Ozone.AQI.Category <- as.numeric(factor(df$Ozone.AQI.Category))
+df$PM2.5.AQI.Category <- as.numeric(factor(df$PM2.5.AQI.Category))
+
+head(df)
+```
+
+```{r}
+# Drop specified columns
+df <- subset(df, select = -c(lat, lng, Country, City, NO2.AQI.Value, NO2.AQI.Category))
+
+head(df)
+```
+
+```{r}
+dim(df)
+```
+
+```{r}
+# Select only numeric columns
+numeric_cols <- sapply(df, is.numeric)
+numeric_df <- df[, numeric_cols]
+
+# Compute the correlation matrix
+corr <- cor(numeric_df)
+
+# Create heatmap
+corrplot(corr, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+```
+
+```{r}
+df$AQI.Category <- as.factor(df$AQI.Category)
+```
+
+## **Predictive Model**
+
+```{r}
+# Split the data into features (X) and target variable (y)
+X <- df[, !(colnames(df) %in% c("AQI.Value"))]
+y <- df$AQI.Value
+
+# Split the data into training and testing sets
+train_indices <- caret::createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[train_indices, ]
+y_train <- y[train_indices]
+X_test <- X[-train_indices, ]
+y_test <- y[-train_indices]
+
+# Check the dimensions of the training and testing sets
+cat("Training set dimensions:", dim(X_train), "\n")
+cat("Testing set dimensions:", dim(X_test), "\n")
+```
+
+```{r}
+df
+
+```
+
+```{r}
+# Train the model
+model <- randomForest(y = y_train, x = X_train)
+
+# Make predictions on the test set
+predictions <- predict(model, newdata = X_test)
+
+# Convert factor predictions to numeric
+predictions <- as.numeric(as.character(predictions))
+
+# Convert factor y_test to numeric
+y_test <- as.numeric(as.character(y_test))
+
+# Calculate MAE
+mae <- caret::MAE(predictions, y_test)
+cat("MAE:", mae, "\n")
+
+# Calculate RMSE
+rmse <- caret::RMSE(predictions, y_test)
+cat("RMSE:", rmse, "\n")
+
+# Calculate R-squared
+rsquared <- caret::R2(predictions, y_test)
+cat("R-squared:", rsquared, "\n")
+```
+
+```{r}
+predictions
+```
+
